@@ -91,6 +91,7 @@ for cl in d.get_classes():
 					cl_links_aggregate[cl.get_name()].append(field_class)
 
 cl_links_inherit = {}
+cl_not_root = []
 
 for cl in d.get_classes():
 	if not consider_library_classes and isLibraryClass(cl.get_name()):
@@ -101,10 +102,13 @@ for cl in d.get_classes():
 			if not cl_p.get_superclassname() in cl_links_inherit:
 				cl_links_inherit[cl_p.get_superclassname()] = []
 			cl_links_inherit[cl_p.get_superclassname()].append(cl.get_name())
+			if not cl.get_name() in cl_not_root:
+				cl_not_root.append(cl.get_name())
 		if cl_p.get_superclassname() in string_class_map:
 			cl_p = string_class_map[cl_p.get_superclassname()]
 		else:
 			break
+
 
 cl_links_utilize = {}
 for cl in d.get_classes():
@@ -135,6 +139,53 @@ for cl in d.get_classes():
 						cl_links_utilize[cl.get_name()] = []
 					if not invoked_class in cl_links_utilize[cl.get_name()]:
 						cl_links_utilize[cl.get_name()].append(invoked_class)
+
+# Computing diagram-based code metrics
+def depth(class_name, cont_dict):
+	if not class_name in cont_dict:
+		return 0
+	max_depth = 0
+	for cl in cont_dict[class_name]:
+		d = depth(cl, cont_dict)
+		max_depth = max(d, max_depth)
+	return max_depth + 1
+
+maximum_inherit_depth = 0
+for cl in cl_links_inherit:
+	if not cl in cl_not_root:
+		maximum_inherit_depth = max(maximum_inherit_depth, depth(cl, cl_links_inherit))
+
+maximum_aggregation_depth = 0
+for cl in cl_links_aggregate:
+	maximum_aggregation_depth = max(maximum_aggregation_depth, depth(cl, cl_links_aggregate))
+
+#Finding longest path in dependencies. This code can probably be optimized
+longest_usage_path_len = 0
+unique_classes = []
+for cl in cl_links_utilize:
+	if not cl in unique_classes:
+		unique_classes.append(cl)
+	for cl_u in cl_links_utilize[cl]:
+		if not cl_u in unique_classes:
+			unique_classes.append(cl_u)
+
+def traverse(class_name, path):
+	if not class_name in cl_links_utilize:
+		return len(path)
+	max_len = len(path)
+	for cl in cl_links_utilize[class_name]:
+		if not cl in path:
+			path1 = list(path)
+			path1.append(cl)
+			max_len = max(max_len, traverse(cl, path1))
+	return max_len
+
+for cl in unique_classes:
+	longest_usage_path_len = max(longest_usage_path_len, traverse(cl, [cl]))
+
+print 'Maximum inherit depth: ', maximum_inherit_depth
+print 'Maximum aggregation level: ', maximum_aggregation_depth
+print 'Longest class dependencies path length (number of classes): ', longest_usage_path_len
 
 #Building diagram
 f_diag = open('text-diagram.txt', 'w')
